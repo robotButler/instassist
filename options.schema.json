@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["options"],
+  "additionalProperties": false,
+  "properties": {
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["value", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The exact command or text to use."
+          },
+          "description": {
+            "type": "string",
+            "description": "A short explanation of what this option does."
+          },
+          "recommendation_order": {
+            "type": "integer",
+            "description": "Optional priority; lower numbers are more recommended."
+          }
+        }
+      }
+    }
+  }
+}

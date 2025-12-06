@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -88,11 +90,16 @@ func main() {
 }
 
 func newModel(defaultCLI string) model {
+	schemaPath, err := optionsSchemaPath()
+	if err != nil {
+		log.Fatalf("schema not found: %v", err)
+	}
+
 	cliOptions := []cliOption{
 		{
 			name: "codex",
 			runPrompt: func(ctx context.Context, prompt string) ([]byte, error) {
-				cmd := exec.CommandContext(ctx, "codex", "exec")
+				cmd := exec.CommandContext(ctx, "codex", "exec", "--output-schema", schemaPath)
 				cmd.Stdin = strings.NewReader(prompt)
 				return cmd.CombinedOutput()
 			},
@@ -100,7 +107,7 @@ func newModel(defaultCLI string) model {
 		{
 			name: "claude",
 			runPrompt: func(ctx context.Context, prompt string) ([]byte, error) {
-				cmd := exec.CommandContext(ctx, "claude", "-p", prompt)
+				cmd := exec.CommandContext(ctx, "claude", "-p", prompt, "--json-schema", schemaPath)
 				return cmd.CombinedOutput()
 			},
 		},
@@ -440,6 +447,25 @@ func buildPrompt(userPrompt string) string {
 	base := "Give me one or more concise options with short descriptions for the following: "
 	schema := `Respond ONLY with JSON shaped like {"options":[{"value":"...","description":"...","recommendation_order":1}]}. No extra text.`
 	return base + userPrompt + "\n" + schema
+}
+
+func optionsSchemaPath() (string, error) {
+	tryPaths := []string{}
+
+	if exe, err := os.Executable(); err == nil {
+		tryPaths = append(tryPaths, filepath.Join(filepath.Dir(exe), "options.schema.json"))
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		tryPaths = append(tryPaths, filepath.Join(cwd, "options.schema.json"))
+	}
+
+	for _, p := range tryPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+
+	return "", fmt.Errorf("options.schema.json not found in executable or working directory")
 }
 
 func (m model) View() string {
