@@ -4,10 +4,7 @@ BINARY_NAME=inst
 INSTALL_PATH=/usr/local/bin
 SCHEMA_PATH=/usr/local/share/insta-assist
 VERSION=1.0.0
-GO_INSTALL_DIR?=$(shell go env GOBIN)
-ifeq ($(strip $(GO_INSTALL_DIR)),)
-  GO_INSTALL_DIR=$(HOME)/.local/share/omarchy/bin
-endif
+GO_INSTALL_DIR?=$(HOME)/.local/share/omarchy/bin
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -56,5 +53,6 @@ run: build ## Build and run in interactive mode
 
 go-install: ## Install with go install (places binary in GOBIN or GOPATH/bin as inst)
 	@echo "Installing to $(GO_INSTALL_DIR)"
+	@mkdir -p "$(GO_INSTALL_DIR)"
 	GOBIN=$(GO_INSTALL_DIR) go install ./cmd/inst
 	@echo "Binary installed to $(GO_INSTALL_DIR)/inst"
