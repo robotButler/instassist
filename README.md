@@ -60,7 +60,7 @@ This will:
 
 ```bash
 make go-install
-# Default install dir: ~/.local/share/omarchy/bin (override with GO_INSTALL_DIR=/path)
+# Default install dir: Go bin (GOBIN if set, otherwise GOPATH/bin). Override with GO_INSTALL_DIR=/path.
 # Binary name: inst (ensure the chosen dir is on your PATH for launchers)
 ```
 

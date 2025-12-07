@@ -4,7 +4,10 @@ BINARY_NAME=inst
 INSTALL_PATH=/usr/local/bin
 SCHEMA_PATH=/usr/local/share/insta-assist
 VERSION=1.0.0
-GO_INSTALL_DIR?=$(HOME)/.local/share/omarchy/bin
+GO_INSTALL_DIR?=$(shell go env GOBIN)
+ifeq ($(strip $(GO_INSTALL_DIR)),)
+  GO_INSTALL_DIR=$(shell go env GOPATH)/bin
+endif
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -35,6 +38,12 @@ uninstall: ## Remove installed binary and schema
 	sudo rm -f $(INSTALL_PATH)/$(BINARY_NAME)
 	sudo rm -rf $(SCHEMA_PATH)
 	@echo "Uninstall complete!"
+
+user-install: build ## Install to ~/.local/bin (no sudo)
+	@echo "Installing $(BINARY_NAME) to $$HOME/.local/bin..."
+	mkdir -p $$HOME/.local/bin
+	cp $(BINARY_NAME) $$HOME/.local/bin/
+	@echo "Installation complete! Ensure $$HOME/.local/bin is on your PATH."
 
 clean: ## Remove build artifacts
 	@echo "Cleaning build artifacts..."
