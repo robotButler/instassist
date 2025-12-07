@@ -29,7 +29,8 @@ func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode s
 		cmd.Stdin = strings.NewReader(fullPrompt)
 		output, err = cmd.CombinedOutput()
 	case "claude":
-		output, err = runClaude(ctx, fullPrompt, schemaPath)
+		cmd := exec.CommandContext(ctx, "claude", "-p", fullPrompt, "--json-schema", schemaPath)
+		output, err = cmd.CombinedOutput()
 	case "gemini":
 		cmd := exec.CommandContext(ctx, "gemini", "--output-format", "json", fullPrompt)
 		output, err = cmd.CombinedOutput()
