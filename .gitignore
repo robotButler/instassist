@@ -1,4 +1,6 @@
 /instassist
+instassist
 .DS_Store
 *.log
 *.out
+.crush/

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -25,11 +26,12 @@ type cliOption struct {
 }
 
 const (
+	version        = "1.0.0"
 	defaultCLIName = "codex"
 	titleText      = "instassist"
 
 	helpInput   = "tab: switch cli • enter: send • shift+enter/alt+enter: newline"
-	helpViewing = "up/down/j/k: select • enter: copy & exit • shift+enter/alt+enter: new prompt • tab: switch cli • esc/q: quit"
+	helpViewing = "up/down/j/k: select • enter: copy & exit • ctrl+enter: run & exit • shift+enter: new prompt • tab: switch cli • esc/q: quit"
 )
 
 type viewMode int
@@ -81,11 +83,107 @@ type model struct {
 
 func main() {
 	cliFlag := flag.String("cli", defaultCLIName, "default CLI to use: codex or claude")
+	promptFlag := flag.String("prompt", "", "prompt to send (non-interactive mode)")
+	selectFlag := flag.Int("select", -1, "auto-select option by index (0-based, use with -prompt)")
+	outputFlag := flag.String("output", "clipboard", "output mode: clipboard, stdout, or exec")
+	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
+	if *versionFlag {
+		fmt.Printf("instassist version %s\n", version)
+		os.Exit(0)
+	}
+
+	// Non-interactive mode
+	if *promptFlag != "" {
+		runNonInteractive(*cliFlag, *promptFlag, *selectFlag, *outputFlag)
+		return
+	}
+
+	// Check if stdin is not a terminal (piped input)
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatalf("error reading stdin: %v", err)
+		}
+		prompt := strings.TrimSpace(string(data))
+		if prompt != "" {
+			runNonInteractive(*cliFlag, prompt, *selectFlag, *outputFlag)
+			return
+		}
+	}
+
+	// Interactive TUI mode
 	m := newModel(*cliFlag)
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("error: %v", err)
+	}
+}
+
+func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode string) {
+	schemaPath, err := optionsSchemaPath()
+	if err != nil {
+		log.Fatalf("schema not found: %v", err)
+	}
+
+	fullPrompt := buildPrompt(userPrompt)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	var output []byte
+	switch strings.ToLower(cliName) {
+	case "codex":
+		cmd := exec.CommandContext(ctx, "codex", "exec", "--output-schema", schemaPath)
+		cmd.Stdin = strings.NewReader(fullPrompt)
+		output, err = cmd.CombinedOutput()
+	case "claude":
+		cmd := exec.CommandContext(ctx, "claude", "-p", fullPrompt, "--json-schema", schemaPath)
+		output, err = cmd.CombinedOutput()
+	default:
+		log.Fatalf("unknown CLI: %s", cliName)
+	}
+
+	if err != nil {
+		log.Fatalf("CLI error: %v\nOutput: %s", err, string(output))
+	}
+
+	opts, parseErr := parseOptions(string(output))
+	if parseErr != nil {
+		log.Fatalf("parse error: %v\nRaw output: %s", parseErr, string(output))
+	}
+
+	if len(opts) == 0 {
+		log.Fatalf("no options returned")
+	}
+
+	// Select the option
+	var selectedValue string
+	if selectIndex >= 0 && selectIndex < len(opts) {
+		selectedValue = opts[selectIndex].Value
+	} else {
+		selectedValue = opts[0].Value
+	}
+
+	// Handle output mode
+	switch strings.ToLower(outputMode) {
+	case "stdout":
+		fmt.Println(selectedValue)
+	case "exec":
+		cmd := exec.Command("sh", "-c", selectedValue)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("exec error: %v", err)
+		}
+	case "clipboard":
+		if err := clipboard.WriteAll(selectedValue); err != nil {
+			log.Fatalf("clipboard error: %v", err)
+		}
+		fmt.Printf("Copied to clipboard: %s\n", selectedValue)
+	default:
+		log.Fatalf("unknown output mode: %s", outputMode)
 	}
 }
 
@@ -247,6 +345,21 @@ func (m model) handleViewingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lastParseError = nil
 		m.rawOutput = ""
 		return m, nil
+	case isCtrlEnter(msg):
+		// Run command and exit
+		value := m.selectedValue()
+		if value == "" {
+			if m.rawOutput == "" {
+				m.status = "nothing to run • " + helpViewing
+				return m, nil
+			}
+			value = m.rawOutput
+		}
+		return m, tea.Sequence(
+			tea.ExecProcess(exec.Command("sh", "-c", value), func(err error) tea.Msg {
+				return tea.Quit()
+			}),
+		)
 	case msg.Type == tea.KeyEnter:
 		value := m.selectedValue()
 		if value == "" {
@@ -354,6 +467,11 @@ func isShiftEnter(msg tea.KeyMsg) bool {
 	return s == "shift+enter" || s == "alt+enter"
 }
 
+func isCtrlEnter(msg tea.KeyMsg) bool {
+	s := msg.String()
+	return s == "ctrl+enter" || (msg.Type == tea.KeyEnter && msg.Type == tea.KeyCtrlM)
+}
+
 func parseOptions(raw string) ([]optionEntry, error) {
 	var lastOpts []optionEntry
 	search := raw
@@ -411,26 +529,58 @@ func (m model) selectedValue() string {
 
 func (m model) renderOptionsTable() string {
 	if len(m.options) == 0 {
-		return "(no options)"
+		noOptsStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
+		return noOptsStyle.Render("(no options)")
 	}
 
 	var rows []string
 
+	selectedStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("230")).
+		Bold(true).
+		Padding(0, 1)
+
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15"))
+
+	descStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245")).
+		Italic(true)
+
 	for i, opt := range m.options {
 		value := cleanText(opt.Value)
 		desc := cleanText(opt.Description)
-		prefix := "  "
+
 		if i == m.selected {
-			prefix = "> "
+			line := selectedStyle.Render("▶ " + value)
+			rows = append(rows, line)
+			if desc != "" {
+				descLine := descStyle.Render("  " + desc)
+				rows = append(rows, descLine)
+			}
+		} else {
+			line := normalStyle.Render("  " + value)
+			rows = append(rows, line)
+			if desc != "" {
+				descLine := descStyle.Render("  " + desc)
+				rows = append(rows, descLine)
+			}
 		}
-		line := prefix + value
-		rows = append(rows, line)
-		if desc != "" {
-			rows = append(rows, "    "+desc)
+
+		if i < len(m.options)-1 {
+			rows = append(rows, "")
 		}
 	}
 
-	return strings.Join(rows, "\n")
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2)
+
+	return boxStyle.Render(strings.Join(rows, "\n"))
 }
 
 func cleanText(s string) string {
@@ -453,6 +603,7 @@ func optionsSchemaPath() (string, error) {
 	if cwd, err := os.Getwd(); err == nil {
 		tryPaths = append(tryPaths, filepath.Join(cwd, "options.schema.json"))
 	}
+	tryPaths = append(tryPaths, "/usr/local/share/instassist/options.schema.json")
 
 	for _, p := range tryPaths {
 		if _, err := os.Stat(p); err == nil {
@@ -460,64 +611,134 @@ func optionsSchemaPath() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("options.schema.json not found in executable or working directory")
+	return "", fmt.Errorf("options.schema.json not found in executable directory, working directory, or /usr/local/share/instassist")
 }
 
 func (m model) View() string {
 	if !m.ready {
-		return "loading..."
+		loadingStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Bold(true)
+		return loadingStyle.Render("⏳ Loading...")
 	}
 
 	var b strings.Builder
 	cli := m.currentCLI().name
-	title := lipgloss.NewStyle().Bold(true).Render(titleText)
-	b.WriteString(title)
+
+	// Title and status
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("205")).
+		Bold(true).
+		Underline(true)
+
+	b.WriteString(titleStyle.Render(titleText))
+
 	if m.running {
+		runningStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("10")).
+			Bold(true)
 		b.WriteString("  ")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(fmt.Sprintf("running %s…", cli)))
+		b.WriteString(runningStyle.Render(fmt.Sprintf("⚡ running %s…", cli)))
 	}
+	b.WriteString("\n\n")
+
+	// CLI indicator
+	cliStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("14")).
+		Bold(true)
+	cliLabelStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241"))
+	b.WriteString(cliLabelStyle.Render("CLI: "))
+	b.WriteString(cliStyle.Render(cli))
+	b.WriteString(cliLabelStyle.Render(" (tab to switch)"))
 	b.WriteString("\n")
 
-	b.WriteString(fmt.Sprintf("CLI: %s (tab to switch)\n", cli))
+	divider := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Render(strings.Repeat("─", 60))
+	b.WriteString(divider)
+	b.WriteString("\n")
 
 	if m.mode == modeViewing {
 		if strings.TrimSpace(m.lastPrompt) != "" {
+			promptLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("12")).
+				Bold(true)
+			promptStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("15"))
+
 			b.WriteString("\n")
-			b.WriteString("Prompt:\n")
-			b.WriteString(m.lastPrompt)
+			b.WriteString(promptLabelStyle.Render("📝 Prompt:"))
+			b.WriteString("\n")
+			b.WriteString(promptStyle.Render(m.lastPrompt))
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
+
 		if m.lastParseError != nil {
-			b.WriteString(fmt.Sprintf("Could not parse options: %v\n", m.lastParseError))
+			errorStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("9")).
+				Bold(true)
+			b.WriteString(errorStyle.Render(fmt.Sprintf("❌ Could not parse options: %v\n", m.lastParseError)))
 			if m.rawOutput != "" {
-				b.WriteString("Raw output:\n")
-				b.WriteString(m.rawOutput)
+				rawStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("245"))
+				b.WriteString(rawStyle.Render("Raw output:\n"))
+				b.WriteString(rawStyle.Render(m.rawOutput))
 				b.WriteString("\n")
 			}
 		} else if len(m.options) == 0 {
-			b.WriteString("No options returned.\n")
+			warnStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11")).
+				Bold(true)
+			b.WriteString(warnStyle.Render("⚠ No options returned.\n"))
 			if m.rawOutput != "" {
-				b.WriteString("Raw output:\n")
-				b.WriteString(m.rawOutput)
+				rawStyle := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("245"))
+				b.WriteString(rawStyle.Render("Raw output:\n"))
+				b.WriteString(rawStyle.Render(m.rawOutput))
 				b.WriteString("\n")
 			}
 		} else {
+			optionsLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("10")).
+				Bold(true)
+			b.WriteString(optionsLabelStyle.Render("✨ Options:"))
+			b.WriteString("\n\n")
 			b.WriteString(m.renderOptionsTable())
-			b.WriteString("\n\nSelected: ")
-			b.WriteString(m.selectedValue())
+			b.WriteString("\n\n")
+
+			selectedLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("14")).
+				Bold(true)
+			selectedValueStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("11"))
+			b.WriteString(selectedLabelStyle.Render("Selected: "))
+			b.WriteString(selectedValueStyle.Render(m.selectedValue()))
 			b.WriteString("\n")
 		}
 	} else {
+		promptLabelStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("12")).
+			Bold(true)
 		b.WriteString("\n")
-		b.WriteString("Prompt:\n")
-		b.WriteString(m.input.View())
+		b.WriteString(promptLabelStyle.Render("📝 Enter your prompt:"))
+		b.WriteString("\n")
+
+		inputBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("12")).
+			Padding(0, 1)
+		b.WriteString(inputBoxStyle.Render(m.input.View()))
 		b.WriteString("\n")
 	}
 
 	if m.status != "" {
 		b.WriteString("\n")
-		b.WriteString(m.status)
+		statusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Italic(true)
+		b.WriteString(statusStyle.Render("💡 " + m.status))
 	}
 
 	return b.String()
