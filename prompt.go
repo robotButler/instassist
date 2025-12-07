@@ -67,7 +67,7 @@ func cleanText(s string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " ")), " ")
 }
 
-func optionsSchemaPath() (string, error) {
+func schemaSources() (string, string, error) {
 	tryPaths := []string{}
 
 	if exe, err := os.Executable(); err == nil {
@@ -79,18 +79,26 @@ func optionsSchemaPath() (string, error) {
 	tryPaths = append(tryPaths, "/usr/local/share/insta-assist/options.schema.json")
 
 	for _, p := range tryPaths {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
+		if data, err := os.ReadFile(p); err == nil {
+			return p, string(data), nil
 		}
 	}
 
-	return "", fmt.Errorf("options.schema.json not found in executable directory, working directory, or /usr/local/share/insta-assist")
-}
-
-func loadSchemaJSON(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+	// Fallback to embedded schema if available by writing to a temp file
+	if len(embeddedSchema) > 0 {
+		tmp, err := os.CreateTemp("", "insta-options-schema-*.json")
+		if err != nil {
+			return "", "", fmt.Errorf("failed to create temp schema file: %w", err)
+		}
+		if _, err := tmp.Write(embeddedSchema); err != nil {
+			tmp.Close()
+			return "", "", fmt.Errorf("failed to write temp schema file: %w", err)
+		}
+		if err := tmp.Close(); err != nil {
+			return "", "", fmt.Errorf("failed to close temp schema file: %w", err)
+		}
+		return tmp.Name(), string(embeddedSchema), nil
 	}
-	return string(data), nil
+
+	return "", "", fmt.Errorf("options.schema.json not found in executable directory, working directory, or /usr/local/share/insta-assist")
 }

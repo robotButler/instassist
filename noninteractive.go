@@ -13,13 +13,9 @@ import (
 )
 
 func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode string) {
-	schemaPath, err := optionsSchemaPath()
+	schemaPath, schemaJSON, err := schemaSources()
 	if err != nil {
 		log.Fatalf("schema not found: %v", err)
-	}
-	schemaJSON, err := loadSchemaJSON(schemaPath)
-	if err != nil {
-		log.Fatalf("cannot read schema: %v", err)
 	}
 
 	fullPrompt := buildPrompt(userPrompt)

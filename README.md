@@ -270,8 +270,8 @@ The app looks for `options.schema.json` in these locations (in order):
 ## Troubleshooting
 
 **"schema not found" error**
-- Run `make install` to copy schema to system location
-- Or keep `options.schema.json` in the same directory as the binary
+- The binary embeds the schema and will write a temp copy if none is found. If it still fails, ensure the temp directory is writable.
+- Alternatively place `options.schema.json` in the same directory as the binary or install with `make install` to copy to `/usr/local/share/insta-assist/`.
 
 **AI CLI not found**
 - Make sure one of the supported AI CLIs is installed and in your PATH: `codex`, `claude`, `gemini`, or `opencode`

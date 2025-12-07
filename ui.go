@@ -18,7 +18,7 @@ import (
 const (
 	titleText = "insta-assist"
 
-	helpInput   = "enter: send • ctrl+r: send & run • alt+enter/ctrl+j: newline"
+	helpInput   = "enter: send • ctrl+r: send & run • alt+enter/ctrl+j: newline • esc: exit"
 	helpViewing = "up/down/j/k: select • enter: copy & exit • ctrl+r: run & exit • alt+enter: new prompt • esc/q: quit"
 )
 
@@ -82,11 +82,7 @@ type model struct {
 }
 
 func newModel(defaultCLI string) model {
-	schemaPath, err := optionsSchemaPath()
-	if err != nil {
-		logFatalSchema(err)
-	}
-	schemaJSON, err := loadSchemaJSON(schemaPath)
+	schemaPath, schemaJSON, err := schemaSources()
 	if err != nil {
 		logFatalSchema(err)
 	}
@@ -741,7 +737,10 @@ func (m model) View() string {
 			b.WriteString(keyStyle.Render("alt+enter"))
 			b.WriteString(descStyle.Render("/"))
 			b.WriteString(keyStyle.Render("ctrl+j"))
-			b.WriteString(descStyle.Render(": newline"))
+			b.WriteString(descStyle.Render(": newline "))
+			b.WriteString(sepStyle.Render("• "))
+			b.WriteString(keyStyle.Render("esc"))
+			b.WriteString(descStyle.Render(": exit"))
 		} else if m.status == helpViewing {
 			b.WriteString(keyStyle.Render("up"))
 			b.WriteString(descStyle.Render("/"))

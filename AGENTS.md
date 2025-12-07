@@ -42,6 +42,6 @@
 ## Compatibility Notes
 - Tested Go toolchain target is 1.24.x; dependencies are pinned to released versions compatible with macOS and common Linux distros.
 - Clipboard defaults to xclip/xsel on Linux; on headless systems prefer `-output stdout` to avoid dependency errors.
-- Schema is required even for CLIs that accept positional prompts; ensure it is present in one of the lookup paths before running.
-- Claude CLI expects the schema JSON string (not a file path) plus `--print --output-format json --json-schema "<json>"`. The app reads `options.schema.json` and passes its contents for claude; if you change the schema, keep it valid JSON.
-- Quick manual verification: use tmux (or another terminal) to run `claude -p "check" --print --output-format json --json-schema "$(cat options.schema.json)"` and confirm structured output; do the same for `codex`/`gemini`/`opencode` with their documented flags. 
+- Schema is required even for CLIs that accept positional prompts; the binary embeds `options.schema.json` and will write a temp copy if none is present on disk. If temp creation fails, place the schema next to the binary or install via `make install` for `/usr/local/share/insta-assist/`.
+- Claude CLI expects the schema JSON string (not a file path) plus `--print --output-format json --json-schema "<json>"`. The app loads the schema contents (embedded or on-disk) and passes the JSON string; keep the schema valid JSON.
+- Quick manual verification: use tmux (or another terminal) to run `claude -p "check" --print --output-format json --json-schema "$(cat options.schema.json)"` and confirm structured output; do the same for `codex`/`gemini`/`opencode` with their documented flags.
