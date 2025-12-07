@@ -59,8 +59,9 @@ This will:
 ### Install with `go install`
 
 ```bash
-go install ./cmd/inst
-# Binary name: inst (in $(go env GOBIN) or $(go env GOPATH)/bin)
+make go-install
+# Default install dir: $(HOME)/.local/share/omarchy/bin (overridable via GO_INSTALL_DIR)
+# Binary name: inst (ensure the chosen dir is on your PATH for launchers)
 ```
 
 ### Manual Build

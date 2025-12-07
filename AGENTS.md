@@ -10,7 +10,7 @@
 - `make run` — build then launch the TUI from the repo (uses alt screen).
 - `make test` — build and run smoke checks for `-version` and `-h`; use `go test ./...` for unit coverage (prompt parsing, schema lookup, exec flows).
 - `make install` — build, copy binary to `/usr/local/bin`, and install schema to `/usr/local/share/insta-assist` (uses `sudo`); `make uninstall` reverses it.
-- `make go-install` — install via `go install ./cmd/inst` into `GOBIN`/`GOPATH/bin` (binary name: `inst`).
+- `make go-install` — install via `go install ./cmd/inst` into `GO_INSTALL_DIR` (defaults to `~/.local/share/omarchy/bin`; override with `GO_INSTALL_DIR=/path`).
 - Manual build: `go build -o inst ./cmd/inst` if you need a quick local binary.
 
 ## Coding Style & Naming Conventions
