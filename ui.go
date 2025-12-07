@@ -18,8 +18,8 @@ import (
 const (
 	titleText = "insta-assist"
 
-	helpInput   = "enter: send • ctrl+r: send & run • ctrl+n/ctrl+p: switch cli • alt+enter/ctrl+j: newline"
-	helpViewing = "up/down/j/k: select • enter: copy & exit • ctrl+r: run & exit • ctrl+n/ctrl+p: switch cli • alt+enter: new prompt • esc/q: quit"
+	helpInput   = "enter: send • ctrl+r: send & run • alt+enter/ctrl+j: newline"
+	helpViewing = "up/down/j/k: select • enter: copy & exit • ctrl+r: run & exit • alt+enter: new prompt • esc/q: quit"
 )
 
 type viewMode int
@@ -39,6 +39,13 @@ type responseMsg struct {
 type execResultMsg struct {
 	err  error
 	exit bool
+}
+
+type tickMsg struct{}
+
+func tickCmd() tea.Msg {
+	time.Sleep(80 * time.Millisecond)
+	return tickMsg{}
 }
 
 type cliOption struct {
@@ -69,6 +76,8 @@ type model struct {
 	lastParseError error
 
 	autoExecute bool // if true, execute first result and exit
+
+	spinnerFrame int // for animation while waiting
 }
 
 func newModel(defaultCLI string) model {
@@ -158,6 +167,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeComponents()
 		if m.mode == modeInput {
 			m.adjustTextareaHeight()
+		}
+		return m, nil
+	case tickMsg:
+		if m.running {
+			m.spinnerFrame = (m.spinnerFrame + 1) % 10
+			return m, tickCmd
 		}
 		return m, nil
 	case responseMsg:
@@ -279,12 +294,6 @@ func (m model) handleViewingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.Type == tea.KeyCtrlC || msg.String() == "esc" || msg.String() == "q":
 		return m, tea.Quit
-	case msg.String() == "ctrl+n":
-		m.nextCLI()
-		return m, nil
-	case msg.String() == "ctrl+p":
-		m.prevCLI()
-		return m, nil
 	case isNewline(msg):
 		m.mode = modeInput
 		m.running = false
@@ -331,16 +340,9 @@ func (m model) handleViewingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleRunningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Only allow quitting while running
 	if msg.Type == tea.KeyCtrlC || msg.String() == "esc" {
 		return m, tea.Quit
-	}
-	if msg.String() == "ctrl+n" {
-		m.nextCLI()
-		return m, nil
-	}
-	if msg.String() == "ctrl+p" {
-		m.prevCLI()
-		return m, nil
 	}
 	return m, nil
 }
@@ -393,7 +395,8 @@ func (m model) submitPrompt() (tea.Model, tea.Cmd) {
 	fullPrompt := buildPrompt(userPrompt)
 	m.running = true
 	m.mode = modeRunning
-	m.status = fmt.Sprintf("running %s… • ctrl+n/ctrl+p: switch cli", m.currentCLI().name)
+	m.spinnerFrame = 0
+	m.status = ""
 	m.options = nil
 	m.lastParseError = nil
 	m.rawOutput = ""
@@ -413,7 +416,7 @@ func (m model) submitPrompt() (tea.Model, tea.Cmd) {
 	}
 
 	m.resizeComponents()
-	return m, cmd
+	return m, tea.Batch(cmd, tickCmd)
 }
 
 func (m *model) nextCLI() {
@@ -494,8 +497,7 @@ func (m model) renderOptionsTable() string {
 	selectedStyle := lipgloss.NewStyle().
 		Background(lipgloss.Color("62")).
 		Foreground(lipgloss.Color("230")).
-		Bold(true).
-		Padding(0, 1)
+		Bold(true)
 
 	normalStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("15"))
@@ -512,29 +514,17 @@ func (m model) renderOptionsTable() string {
 			line := selectedStyle.Render("▶ " + value)
 			rows = append(rows, line)
 			if desc != "" {
-				descLine := descStyle.Render("  " + desc)
-				rows = append(rows, descLine)
+				rows = append(rows, descStyle.Render("  " + desc))
 			}
 		} else {
-			line := normalStyle.Render("  " + value)
-			rows = append(rows, line)
+			rows = append(rows, normalStyle.Render("  " + value))
 			if desc != "" {
-				descLine := descStyle.Render("  " + desc)
-				rows = append(rows, descLine)
+				rows = append(rows, descStyle.Render("  " + desc))
 			}
-		}
-
-		if i < len(m.options)-1 {
-			rows = append(rows, "")
 		}
 	}
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2)
-
-	return boxStyle.Render(strings.Join(rows, "\n"))
+	return strings.Join(rows, "\n")
 }
 
 func (m model) View() string {
@@ -546,76 +536,86 @@ func (m model) View() string {
 	}
 
 	var b strings.Builder
-	cli := m.currentCLI().name
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("205")).
+	// Tab styling (based on lipgloss example)
+	highlight := lipgloss.Color("205")
+	activeTabBorder := lipgloss.Border{
+		Top:         "─",
+		Bottom:      " ",
+		Left:        "│",
+		Right:       "│",
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "┘",
+		BottomRight: "└",
+	}
+	tabBorder := lipgloss.Border{
+		Top:         "─",
+		Bottom:      "─",
+		Left:        "│",
+		Right:       "│",
+		TopLeft:     "╭",
+		TopRight:    "╮",
+		BottomLeft:  "┴",
+		BottomRight: "┴",
+	}
+
+	tab := lipgloss.NewStyle().
+		Border(tabBorder, true).
+		BorderForeground(highlight).
+		Padding(0, 1).
+		Foreground(lipgloss.Color("240"))
+
+	activeTab := lipgloss.NewStyle().
+		Border(activeTabBorder, true).
+		BorderForeground(highlight).
+		Padding(0, 1).
 		Bold(true).
-		Underline(true)
-	selectedCLIStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("205")).
-		Bold(true)
-	otherCLIStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Italic(true)
-	shortcutStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
-		Italic(true)
+		Foreground(highlight)
 
-	logoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("205"))
-	b.WriteString(logoStyle.Render("✨ "))
-
-	b.WriteString(titleStyle.Render(titleText))
-	b.WriteString(" • ")
-
-	if m.running {
-		runningStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("10")).
-			Bold(true)
-		b.WriteString(runningStyle.Render(fmt.Sprintf("⚡ running %s…", cli)))
-	} else {
-		for i, opt := range m.cliOptions {
-			if i > 0 {
-				b.WriteString(" ")
-			}
-			if i == m.cliIndex {
-				b.WriteString(selectedCLIStyle.Render(opt.name))
-			} else {
-				b.WriteString(otherCLIStyle.Render(opt.name))
-			}
-		}
-		if len(m.cliOptions) > 1 {
-			b.WriteString(shortcutStyle.Render(" (ctrl+n / ctrl+p)"))
+	// Render tabs
+	var tabs []string
+	for i, opt := range m.cliOptions {
+		if i == m.cliIndex {
+			tabs = append(tabs, activeTab.Render(opt.name))
+		} else {
+			tabs = append(tabs, tab.Render(opt.name))
 		}
 	}
+
+	row := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
+	b.WriteString(row)
 	b.WriteString("\n")
 
-	if m.mode == modeViewing {
-		if strings.TrimSpace(m.lastPrompt) != "" {
-			promptLabelStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("12")).
-				Bold(true)
-			promptStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("15"))
+	if m.running {
+		// Show spinner animation
+		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 
-			b.WriteString("\n")
-			b.WriteString(promptLabelStyle.Render("Prompt:"))
-			b.WriteString("\n")
-			b.WriteString(promptStyle.Render(m.lastPrompt))
+		spinnerStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("10")).
+			Bold(true)
+		b.WriteString(spinnerStyle.Render(fmt.Sprintf("%s Running %s...", spinner, m.currentCLI().name)))
+		b.WriteString("\n")
+	} else if m.mode == modeViewing {
+		// Condensed results view
+		promptStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("12")).
+			Bold(true)
+		if strings.TrimSpace(m.lastPrompt) != "" {
+			b.WriteString(promptStyle.Render("❯ " + m.lastPrompt))
 			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 
 		if m.lastParseError != nil {
 			errorStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("9")).
 				Bold(true)
-			b.WriteString(errorStyle.Render(fmt.Sprintf("❌ Could not parse options: %v\n", m.lastParseError)))
+			b.WriteString(errorStyle.Render(fmt.Sprintf("❌ Parse error: %v", m.lastParseError)))
+			b.WriteString("\n")
 			if m.rawOutput != "" {
 				rawStyle := lipgloss.NewStyle().
 					Foreground(lipgloss.Color("245"))
-				b.WriteString(rawStyle.Render("Raw output:\n"))
 				b.WriteString(rawStyle.Render(m.rawOutput))
 				b.WriteString("\n")
 			}
@@ -623,30 +623,10 @@ func (m model) View() string {
 			warnStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("11")).
 				Bold(true)
-			b.WriteString(warnStyle.Render("⚠ No options returned.\n"))
-			if m.rawOutput != "" {
-				rawStyle := lipgloss.NewStyle().
-					Foreground(lipgloss.Color("245"))
-				b.WriteString(rawStyle.Render("Raw output:\n"))
-				b.WriteString(rawStyle.Render(m.rawOutput))
-				b.WriteString("\n")
-			}
+			b.WriteString(warnStyle.Render("⚠ No options returned"))
+			b.WriteString("\n")
 		} else {
-			optionsLabelStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("10")).
-				Bold(true)
-			b.WriteString(optionsLabelStyle.Render("✨ Options:"))
-			b.WriteString("\n\n")
 			b.WriteString(m.renderOptionsTable())
-			b.WriteString("\n\n")
-
-			selectedLabelStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("14")).
-				Bold(true)
-			selectedValueStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("11"))
-			b.WriteString(selectedLabelStyle.Render("Selected: "))
-			b.WriteString(selectedValueStyle.Render(m.selectedValue()))
 			b.WriteString("\n")
 		}
 	} else {
