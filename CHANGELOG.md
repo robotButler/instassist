@@ -46,4 +46,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Error handling with helpful messages
 - Raw output display when JSON parsing fails
 
-[1.0.0]: https://github.com/yourusername/instassist/releases/tag/v1.0.0
+[1.0.0]: https://github.com/robotButler/instassist/releases/tag/v1.0.0

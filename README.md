@@ -11,8 +11,10 @@ A beautiful, fast TUI (Terminal User Interface) for getting instant AI-powered c
 ### One-liner (curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<your-gh-user>/instassist/main/install.sh | bash
-# Optional: PREFIX=/usr/local sudo bash - for system-wide install
+curl -fsSL https://raw.githubusercontent.com/robotButler/instassist/master/install.sh | bash
+
+# Or for system-wide install:
+curl -fsSL https://raw.githubusercontent.com/robotButler/instassist/master/install.sh | PREFIX=/usr/local sudo bash
 ```
 
 ### Make targets
