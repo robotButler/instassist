@@ -170,9 +170,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.resizeComponents()
-		if m.mode == modeInput {
-			m.adjustTextareaHeight()
-		}
+		m.adjustTextareaHeight()
 		return m, nil
 	case tickMsg:
 		if m.running {
@@ -373,6 +371,14 @@ func (m model) handleRunningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) adjustTextareaHeight() {
 	content := m.input.Value()
 	lines := strings.Count(content, "\n") + 1
+	// Account for wrapped lines based on current width to avoid overflow
+	if m.input.Width() > 0 {
+		for _, ln := range strings.Split(content, "\n") {
+			if len(ln) > m.input.Width() {
+				lines += len(ln) / m.input.Width()
+			}
+		}
+	}
 	if lines < 1 {
 		lines = 1
 	}
@@ -383,7 +389,12 @@ func (m *model) adjustTextareaHeight() {
 		lines = 20
 	}
 
-	m.input.SetHeight(lines)
+	if m.input.Height() != lines {
+		m.input.SetHeight(lines)
+		// Re-set the value to force viewport recalculation and keep cursor at end.
+		val := m.input.Value()
+		m.input.SetValue(val)
+	}
 }
 
 func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
