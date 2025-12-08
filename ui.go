@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 const (
@@ -370,27 +371,29 @@ func (m model) handleRunningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) adjustTextareaHeight() {
 	content := m.input.Value()
-	lines := strings.Count(content, "\n") + 1
-	// Account for wrapped lines based on current width to avoid overflow
+	visibleLines := strings.Count(content, "\n") + 1
+
+	// Account for wrapped lines based on display width (runewidth-aware).
 	if m.input.Width() > 0 {
 		for _, ln := range strings.Split(content, "\n") {
-			if len(ln) > m.input.Width() {
-				lines += len(ln) / m.input.Width()
+			w := runewidth.StringWidth(ln)
+			if w > m.input.Width() {
+				extra := (w + m.input.Width() - 1) / m.input.Width()
+				// extra already includes the first line; subtract 1 to add only wraps.
+				visibleLines += extra - 1
 			}
 		}
 	}
-	if lines < 1 {
-		lines = 1
+
+	if visibleLines < 1 {
+		visibleLines = 1
 	}
-	if lines > 1 {
-		lines++
-	}
-	if lines > 20 {
-		lines = 20
+	if visibleLines > 20 {
+		visibleLines = 20
 	}
 
-	if m.input.Height() != lines {
-		m.input.SetHeight(lines)
+	if m.input.Height() != visibleLines {
+		m.input.SetHeight(visibleLines)
 		// Re-set the value to force viewport recalculation and keep cursor at end.
 		val := m.input.Value()
 		m.input.SetValue(val)
