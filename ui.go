@@ -527,18 +527,6 @@ func (m model) handleRunningKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) toggleYolo() {
 	m.yolo = !m.yolo
-	state := "off"
-	if m.yolo {
-		state = "on"
-	}
-	switch m.mode {
-	case modeRefine:
-		m.status = fmt.Sprintf("yolo: %s • %s", state, helpRefine)
-	case modeViewing:
-		m.status = fmt.Sprintf("yolo: %s • %s", state, helpViewing)
-	default:
-		m.status = fmt.Sprintf("yolo: %s • %s", state, helpInput)
-	}
 }
 
 func (m *model) adjustTextareaHeight() {
