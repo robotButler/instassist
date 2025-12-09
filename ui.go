@@ -578,83 +578,88 @@ func (m model) optionIndexAt(y int) int {
 	currentRow := row
 	for idx, opt := range m.options {
 		lines := m.optionLines(opt, false)
-		height := len(lines.valueLines) + len(lines.descLines)
-		if y >= currentRow && y < currentRow+height {
+		if y >= currentRow && y < currentRow+len(lines.lines) {
 			return idx
 		}
-		currentRow += height
+		currentRow += len(lines.lines)
 	}
 
 	return -1
 }
 
 type optionRenderLines struct {
-	valueLines []string
-	descLines  []string
+	lines []optionRenderLine
+}
+
+type optionRenderLine struct {
+	prefix  string
+	value   string
+	comment string
 }
 
 func wrapTextLines(text string, width int) []string {
 	if width < 1 {
 		return []string{text}
 	}
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{""}
+	wrapped := wrapWithStarts(text, width)
+	return wrapped.lines
+}
+
+type wrappedText struct {
+	lines  []string
+	starts []int
+}
+
+func wrapWithStarts(text string, width int) wrappedText {
+	if width < 1 {
+		return wrappedText{lines: []string{text}, starts: []int{0}}
 	}
 
+	runes := []rune(text)
 	var lines []string
-	current := ""
+	var starts []int
+	startIdx := 0
 
-	splitLongWord := func(word string) []string {
-		var parts []string
-		runes := []rune(word)
-		for len(runes) > 0 {
-			var builder strings.Builder
-			lineWidth := 0
-			i := 0
-			for i < len(runes) {
-				w := runewidth.RuneWidth(runes[i])
-				if lineWidth+w > width && builder.Len() > 0 {
-					break
+	for len(runes) > 0 {
+		lineWidth := 0
+		breakIdx := len(runes)
+		lastSpace := -1
+		for i, r := range runes {
+			w := runewidth.RuneWidth(r)
+			if r == ' ' {
+				lastSpace = i
+			}
+			if lineWidth+w > width {
+				if lastSpace >= 0 {
+					breakIdx = lastSpace
+				} else if i == 0 {
+					breakIdx = 1
+				} else {
+					breakIdx = i
 				}
-				if lineWidth+w > width && builder.Len() == 0 {
-					// Force at least one rune even if it exceeds width to avoid infinite loop.
-					builder.WriteRune(runes[i])
-					i++
-					break
-				}
-				builder.WriteRune(runes[i])
-				lineWidth += w
-				i++
+				break
 			}
-			parts = append(parts, builder.String())
-			runes = runes[i:]
+			lineWidth += w
 		}
-		return parts
-	}
 
-	for _, word := range words {
-		wordParts := splitLongWord(word)
-		for _, part := range wordParts {
-			partWidth := runewidth.StringWidth(part)
-			if current == "" {
-				current = part
-				continue
-			}
-			if runewidth.StringWidth(current)+1+partWidth <= width {
-				current += " " + part
-				continue
-			}
-			lines = append(lines, current)
-			current = part
+		if breakIdx == 0 {
+			breakIdx = 1
 		}
+
+		lineRunes := runes[:breakIdx]
+		lines = append(lines, string(lineRunes))
+		starts = append(starts, startIdx)
+
+		remaining := runes[breakIdx:]
+		skip := 0
+		for skip < len(remaining) && remaining[skip] == ' ' {
+			skip++
+		}
+		startIdx += breakIdx + skip
+		runes = remaining[skip:]
 	}
 
-	if current != "" {
-		lines = append(lines, current)
-	}
-
-	return lines
+	return wrappedText{lines: lines, starts: starts}
 }
 
 func (m model) optionLines(opt optionEntry, selected bool) optionRenderLines {
@@ -677,11 +682,25 @@ func (m model) optionLines(opt optionEntry, selected bool) optionRenderLines {
 	value := cleanText(opt.Value)
 	desc := strings.TrimSpace(cleanText(opt.Description))
 
-	valueLines := wrapTextLines(value, textWidth)
+	combined := value
+	commentStart := -1
+	if desc != "" {
+		combined += "  # " + desc
+		commentStart = len([]rune(value)) + 2 // point to '#'
+	}
+
+	wrapped := wrapWithStarts(combined, textWidth)
 	indent := strings.Repeat(" ", prefixWidth)
 
-	var renderedValueLines []string
-	for i, line := range valueLines {
+	var lines []optionRenderLine
+	for i, line := range wrapped.lines {
+		lineRunes := []rune(line)
+		start := wrapped.starts[i]
+		commentIdx := -1
+		if commentStart >= 0 && commentStart >= start && commentStart < start+len(lineRunes) {
+			commentIdx = commentStart - start
+		}
+
 		prefix := indent
 		if i == 0 {
 			if selected {
@@ -690,21 +709,22 @@ func (m model) optionLines(opt optionEntry, selected bool) optionRenderLines {
 				prefix = prefixNormal
 			}
 		}
-		renderedValueLines = append(renderedValueLines, prefix+line)
-	}
 
-	var descLines []string
-	if desc != "" {
-		descLinesWrapped := wrapTextLines("# "+desc, textWidth)
-		for _, line := range descLinesWrapped {
-			descLines = append(descLines, indent+line)
+		valueText := line
+		commentText := ""
+		if commentIdx >= 0 {
+			valueText = strings.TrimRight(string(lineRunes[:commentIdx]), " ")
+			commentText = string(lineRunes[commentIdx:])
 		}
+
+		lines = append(lines, optionRenderLine{
+			prefix:  prefix,
+			value:   valueText,
+			comment: commentText,
+		})
 	}
 
-	return optionRenderLines{
-		valueLines: renderedValueLines,
-		descLines:  descLines,
-	}
+	return optionRenderLines{lines: lines}
 }
 
 func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -881,15 +901,20 @@ func (m model) renderOptionsTable() string {
 
 	for i, opt := range m.options {
 		lines := m.optionLines(opt, i == m.selected)
-		for _, vl := range lines.valueLines {
+		for _, ln := range lines.lines {
+			base := ln.prefix + ln.value
 			if i == m.selected {
-				rows = append(rows, selectedStyle.Render(vl))
+				base = selectedStyle.Render(base)
 			} else {
-				rows = append(rows, normalStyle.Render(vl))
+				base = normalStyle.Render(base)
 			}
-		}
-		for _, dl := range lines.descLines {
-			rows = append(rows, commentStyle.Render(dl))
+
+			if strings.TrimSpace(ln.comment) == "" {
+				rows = append(rows, base)
+				continue
+			}
+
+			rows = append(rows, base+commentStyle.Render(ln.comment))
 		}
 	}
 
