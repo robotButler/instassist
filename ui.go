@@ -575,11 +575,136 @@ func (m model) optionIndexAt(y int) int {
 		return -1
 	}
 
-	if y >= row && y < row+len(m.options) {
-		return y - row
+	currentRow := row
+	for idx, opt := range m.options {
+		lines := m.optionLines(opt, false)
+		height := len(lines.valueLines) + len(lines.descLines)
+		if y >= currentRow && y < currentRow+height {
+			return idx
+		}
+		currentRow += height
 	}
 
 	return -1
+}
+
+type optionRenderLines struct {
+	valueLines []string
+	descLines  []string
+}
+
+func wrapTextLines(text string, width int) []string {
+	if width < 1 {
+		return []string{text}
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	current := ""
+
+	splitLongWord := func(word string) []string {
+		var parts []string
+		runes := []rune(word)
+		for len(runes) > 0 {
+			var builder strings.Builder
+			lineWidth := 0
+			i := 0
+			for i < len(runes) {
+				w := runewidth.RuneWidth(runes[i])
+				if lineWidth+w > width && builder.Len() > 0 {
+					break
+				}
+				if lineWidth+w > width && builder.Len() == 0 {
+					// Force at least one rune even if it exceeds width to avoid infinite loop.
+					builder.WriteRune(runes[i])
+					i++
+					break
+				}
+				builder.WriteRune(runes[i])
+				lineWidth += w
+				i++
+			}
+			parts = append(parts, builder.String())
+			runes = runes[i:]
+		}
+		return parts
+	}
+
+	for _, word := range words {
+		wordParts := splitLongWord(word)
+		for _, part := range wordParts {
+			partWidth := runewidth.StringWidth(part)
+			if current == "" {
+				current = part
+				continue
+			}
+			if runewidth.StringWidth(current)+1+partWidth <= width {
+				current += " " + part
+				continue
+			}
+			lines = append(lines, current)
+			current = part
+		}
+	}
+
+	if current != "" {
+		lines = append(lines, current)
+	}
+
+	return lines
+}
+
+func (m model) optionLines(opt optionEntry, selected bool) optionRenderLines {
+	totalWidth := m.width
+	if totalWidth < 30 {
+		totalWidth = 30
+	}
+
+	prefixSelected := "▶ "
+	prefixNormal := "  "
+	prefixWidth := runewidth.StringWidth(prefixSelected)
+	if pw := runewidth.StringWidth(prefixNormal); pw > prefixWidth {
+		prefixWidth = pw
+	}
+	textWidth := totalWidth - prefixWidth
+	if textWidth < 10 {
+		textWidth = totalWidth
+	}
+
+	value := cleanText(opt.Value)
+	desc := strings.TrimSpace(cleanText(opt.Description))
+
+	valueLines := wrapTextLines(value, textWidth)
+	indent := strings.Repeat(" ", prefixWidth)
+
+	var renderedValueLines []string
+	for i, line := range valueLines {
+		prefix := indent
+		if i == 0 {
+			if selected {
+				prefix = prefixSelected
+			} else {
+				prefix = prefixNormal
+			}
+		}
+		renderedValueLines = append(renderedValueLines, prefix+line)
+	}
+
+	var descLines []string
+	if desc != "" {
+		descLinesWrapped := wrapTextLines("# "+desc, textWidth)
+		for _, line := range descLinesWrapped {
+			descLines = append(descLines, indent+line)
+		}
+	}
+
+	return optionRenderLines{
+		valueLines: renderedValueLines,
+		descLines:  descLines,
+	}
 }
 
 func (m model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -755,24 +880,17 @@ func (m model) renderOptionsTable() string {
 		Foreground(lipgloss.Color(grayColor))
 
 	for i, opt := range m.options {
-		value := cleanText(opt.Value)
-		desc := cleanText(opt.Description)
-
-		var line string
-		if i == m.selected {
-			if desc != "" {
-				line = selectedStyle.Render("▶ "+value) + "  " + commentStyle.Render("# "+desc)
+		lines := m.optionLines(opt, i == m.selected)
+		for _, vl := range lines.valueLines {
+			if i == m.selected {
+				rows = append(rows, selectedStyle.Render(vl))
 			} else {
-				line = selectedStyle.Render("▶ " + value)
-			}
-		} else {
-			if desc != "" {
-				line = normalStyle.Render("  "+value) + "  " + commentStyle.Render("# "+desc)
-			} else {
-				line = normalStyle.Render("  " + value)
+				rows = append(rows, normalStyle.Render(vl))
 			}
 		}
-		rows = append(rows, line)
+		for _, dl := range lines.descLines {
+			rows = append(rows, commentStyle.Render(dl))
+		}
 	}
 
 	return strings.Join(rows, "\n")
