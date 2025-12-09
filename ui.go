@@ -923,7 +923,7 @@ func (m model) buildHeader() (string, headerMeta) {
 	if m.yolo {
 		toggleStyle = toggleStyle.Background(lipgloss.Color("205")).Foreground(lipgloss.Color("0"))
 	} else {
-		toggleStyle = toggleStyle.Foreground(lipgloss.Color("241"))
+		toggleStyle = toggleStyle.Foreground(lipgloss.Color("250"))
 	}
 
 	toggleText := toggleStyle.Render("yolo: " + yoloState)
