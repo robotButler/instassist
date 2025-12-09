@@ -23,6 +23,7 @@ func Main() {
 	selectFlag := flag.Int("select", -1, "auto-select option by index (0-based, use with -prompt)")
 	outputFlag := flag.String("output", "clipboard", "output mode: clipboard, stdout, or exec")
 	stayOpenExecFlag := flag.Bool("stay-open-exec", false, "when executing (Ctrl+R), keep the TUI open and show output instead of exiting")
+	yoloFlag := flag.Bool("yolo", false, "start with YOLO/auto-approve enabled")
 	versionFlag := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -33,7 +34,7 @@ func Main() {
 
 	// Non-interactive mode
 	if *promptFlag != "" {
-		runNonInteractive(*cliFlag, *promptFlag, *selectFlag, *outputFlag)
+		runNonInteractive(*cliFlag, *promptFlag, *selectFlag, *outputFlag, *yoloFlag)
 		return
 	}
 
@@ -46,13 +47,13 @@ func Main() {
 		}
 		prompt := strings.TrimSpace(string(data))
 		if prompt != "" {
-			runNonInteractive(*cliFlag, prompt, *selectFlag, *outputFlag)
+			runNonInteractive(*cliFlag, prompt, *selectFlag, *outputFlag, *yoloFlag)
 			return
 		}
 	}
 
 	// Interactive TUI mode
-	m := newModel(*cliFlag, *stayOpenExecFlag)
+	m := newModel(*cliFlag, *stayOpenExecFlag, *yoloFlag)
 	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		log.Fatalf("error: %v", err)
 	}

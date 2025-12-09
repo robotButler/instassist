@@ -12,7 +12,7 @@ import (
 	"github.com/atotto/clipboard"
 )
 
-func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode string) {
+func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode string, yolo bool) {
 	schemaPath, schemaJSON, err := schemaSources()
 	if err != nil {
 		log.Fatalf("schema not found: %v", err)
@@ -25,14 +25,27 @@ func runNonInteractive(cliName, userPrompt string, selectIndex int, outputMode s
 	var output []byte
 	switch strings.ToLower(cliName) {
 	case "codex":
-		cmd := exec.CommandContext(ctx, "codex", "exec", "--output-schema", schemaPath, "--skip-git-repo-check")
+		args := []string{"exec", "--output-schema", schemaPath, "--skip-git-repo-check", "--json"}
+		if yolo {
+			args = append(args, "--yolo")
+		}
+		cmd := exec.CommandContext(ctx, "codex", args...)
 		cmd.Stdin = strings.NewReader(fullPrompt)
 		output, err = cmd.CombinedOutput()
 	case "claude":
-		cmd := exec.CommandContext(ctx, "claude", "-p", fullPrompt, "--print", "--output-format", "json", "--json-schema", schemaJSON)
+		args := []string{"-p", fullPrompt, "--print", "--output-format", "json", "--json-schema", schemaJSON}
+		if yolo {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+		cmd := exec.CommandContext(ctx, "claude", args...)
 		output, err = cmd.CombinedOutput()
 	case "gemini":
-		cmd := exec.CommandContext(ctx, "gemini", "--output-format", "json", fullPrompt)
+		args := []string{"--output-format", "json"}
+		if yolo {
+			args = append(args, "--yolo")
+		}
+		args = append(args, fullPrompt)
+		cmd := exec.CommandContext(ctx, "gemini", args...)
 		output, err = cmd.CombinedOutput()
 	case "opencode":
 		cmd := exec.CommandContext(ctx, "opencode", "run", "--format", "json", fullPrompt)

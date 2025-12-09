@@ -107,7 +107,7 @@ type model struct {
 	promptHistory   []string
 }
 
-func newModel(defaultCLI string, stayOpenExec bool) model {
+func newModel(defaultCLI string, stayOpenExec bool, yoloDefault bool) model {
 	schemaPath, schemaJSON, err := schemaSources()
 	if err != nil {
 		logFatalSchema(err)
@@ -223,6 +223,7 @@ func newModel(defaultCLI string, stayOpenExec bool) model {
 		mode:         modeInput,
 		status:       helpInput,
 		stayOpenExec: stayOpenExec,
+		yolo:         yoloDefault,
 		sessionIDs:   map[string]string{},
 	}
 }
