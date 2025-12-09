@@ -11,11 +11,13 @@ A beautiful, fast TUI (Terminal User Interface) for getting instant AI-powered c
 ### One-liner (curl)
 
 ```bash
+# Per-user installation
 curl -fsSL https://raw.githubusercontent.com/robotButler/instassist/master/install.sh | bash
 
 # For a system-wide install with a proper /opt layout, prefer:
-#   sudo make install
-# (binary to /opt/instassist/inst with a symlink at /usr/local/bin/inst)
+#   make install
+# (builds as your user, then uses sudo only for the copy/link steps;
+#  binary to /opt/instassist/inst with a symlink at /usr/local/bin/inst)
 # If you still want a single-line install under /usr/local/bin:
 curl -fsSL https://raw.githubusercontent.com/robotButler/instassist/master/install.sh | PREFIX=/usr/local sudo bash
 ```
@@ -23,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/robotButler/instassist/master/insta
 ### Make targets
 
 ```bash
-make install      # /opt/instassist + symlink at /usr/local/bin; schema beside binary + /usr/local/share/insta-assist
+make install      # /opt/instassist + symlink at /usr/local/bin; schema beside binary + /usr/local/share/insta-assist (prompts for sudo when needed)
 make user-install # ~/.local/bin (no sudo)
 make go-install   # go install ./cmd/inst (GOBIN or GOPATH/bin)
 ```

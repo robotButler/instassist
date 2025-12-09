@@ -5,6 +5,7 @@ INSTALL_PREFIX=/opt/instassist
 INSTALL_BIN=$(INSTALL_PREFIX)/$(BINARY_NAME)
 SYMLINK_PATH=/usr/local/bin/$(BINARY_NAME)
 SCHEMA_PATH=/usr/local/share/insta-assist
+SUDO?=sudo
 VERSION=1.0.0
 GO_INSTALL_DIR?=$(shell go env GOBIN)
 ifeq ($(strip $(GO_INSTALL_DIR)),)
@@ -23,16 +24,17 @@ build: ## Build the binary
 	@echo "Build complete: ./$(BINARY_NAME)"
 
 install: build ## Build and install to system (/opt/instassist + symlink in /usr/local/bin)
+	@if [ "$$EUID" -eq 0 ]; then echo "Please run 'make install' without sudo; it will prompt for your password when needed."; exit 1; fi
 	@echo "Installing $(BINARY_NAME) to $(INSTALL_PREFIX)..."
-	sudo mkdir -p $(INSTALL_PREFIX)
-	sudo cp $(BINARY_NAME) $(INSTALL_BIN)
-	sudo chmod +x $(INSTALL_BIN)
+	$(SUDO) mkdir -p $(INSTALL_PREFIX)
+	$(SUDO) cp $(BINARY_NAME) $(INSTALL_BIN)
+	$(SUDO) chmod +x $(INSTALL_BIN)
 	@echo "Linking $(SYMLINK_PATH) -> $(INSTALL_BIN)..."
-	sudo ln -sf $(INSTALL_BIN) $(SYMLINK_PATH)
+	$(SUDO) ln -sf $(INSTALL_BIN) $(SYMLINK_PATH)
 	@echo "Copying schema alongside binary and to $(SCHEMA_PATH)..."
-	sudo cp options.schema.json $(INSTALL_PREFIX)/
-	sudo mkdir -p $(SCHEMA_PATH)
-	sudo cp options.schema.json $(SCHEMA_PATH)/
+	$(SUDO) cp options.schema.json $(INSTALL_PREFIX)/
+	$(SUDO) mkdir -p $(SCHEMA_PATH)
+	$(SUDO) cp options.schema.json $(SCHEMA_PATH)/
 	@echo "Installation complete!"
 	@echo ""
 	@echo "To use the schema, the binary will look for it in:"
@@ -41,13 +43,14 @@ install: build ## Build and install to system (/opt/instassist + symlink in /usr
 	@echo "  3. $(SCHEMA_PATH)/options.schema.json"
 
 uninstall: ## Remove installed binary and schema
+	@if [ "$$EUID" -eq 0 ]; then echo "Please run 'make uninstall' without sudo; it will prompt for your password when needed."; exit 1; fi
 	@echo "Removing $(BINARY_NAME)..."
-	sudo rm -f $(SYMLINK_PATH)
-	sudo rm -f $(INSTALL_BIN)
-	sudo rm -f $(INSTALL_PREFIX)/options.schema.json
-	sudo rmdir $(INSTALL_PREFIX) 2>/dev/null || true
+	$(SUDO) rm -f $(SYMLINK_PATH)
+	$(SUDO) rm -f $(INSTALL_BIN)
+	$(SUDO) rm -f $(INSTALL_PREFIX)/options.schema.json
+	$(SUDO) rmdir $(INSTALL_PREFIX) 2>/dev/null || true
 	@echo "Removing schema..."
-	sudo rm -rf $(SCHEMA_PATH)
+	$(SUDO) rm -rf $(SCHEMA_PATH)
 	@echo "Uninstall complete!"
 
 user-install: build ## Install to ~/.local/bin (no sudo)
