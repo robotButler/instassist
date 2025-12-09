@@ -22,7 +22,7 @@ type optionResponse struct {
 }
 
 func buildPrompt(userPrompt string) string {
-	base := "Give me one or more concise options with short descriptions for the following: "
+	base := "Give me one or more concise, actionable options with short descriptions for the following. Favor shell commands as the option values whenever the request can be done via the command line; use non-command prose only when a command truly does not apply: "
 	schema := `Respond ONLY with JSON shaped like {"options":[{"value":"...","description":"...","recommendation_order":1}]}. No extra text.`
 	return base + userPrompt + "\n" + schema
 }
