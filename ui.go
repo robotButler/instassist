@@ -1286,6 +1286,8 @@ func (m model) View() string {
 }
 
 func execWithFeedback(value string, exitOnSuccess bool, stayOpenExec bool) tea.Cmd {
+	fmt.Fprintf(os.Stdout, "→ running: %s\n", value)
+
 	if stayOpenExec {
 		return func() tea.Msg {
 			cmd := exec.Command("sh", "-c", value)
