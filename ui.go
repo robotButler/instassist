@@ -253,20 +253,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case responseMsg:
 		return m.handleResponse(msg)
 	case execResultMsg:
-		if msg.err != nil {
-			m.running = false
-			m.mode = modeViewing
-			m.status = fmt.Sprintf("❌ exec failed: %v • %s", msg.err, helpViewing)
-			m.lastError = msg.err
-			m.execOutput = msg.output
-			return m, nil
-		}
-		if msg.exit {
-			return m, tea.Quit
-		}
 		m.running = false
 		m.mode = modeViewing
 		m.execOutput = msg.output
+		m.lastError = msg.err
+		if msg.exit {
+			return m, tea.Quit
+		}
+		if msg.err != nil {
+			m.status = fmt.Sprintf("❌ exec failed: %v • %s", msg.err, helpViewing)
+			return m, nil
+		}
 		m.status = "command finished • " + helpViewing
 		return m, nil
 	case tea.KeyMsg:
@@ -1285,9 +1282,7 @@ func (m model) View() string {
 	return b.String()
 }
 
-func execWithFeedback(value string, exitOnSuccess bool, stayOpenExec bool) tea.Cmd {
-	fmt.Fprintf(os.Stdout, "→ running: %s\n", value)
-
+func execWithFeedback(value string, exitAfterExec bool, stayOpenExec bool) tea.Cmd {
 	if stayOpenExec {
 		return func() tea.Msg {
 			cmd := exec.Command("sh", "-c", value)
@@ -1296,16 +1291,14 @@ func execWithFeedback(value string, exitOnSuccess bool, stayOpenExec bool) tea.C
 		}
 	}
 
-	cmd := exec.Command("sh", "-c", value)
+	// Wrap the command so the "running:" line prints on the normal screen (not the TUI alt screen).
+	cmd := exec.Command("sh", "-c", `printf "→ running: %s\n" "$1" >&2; exec sh -c "$1"`, "_", value)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		if err != nil {
-			return execResultMsg{err: err, exit: false}
-		}
-		return execResultMsg{exit: exitOnSuccess}
+		return execResultMsg{err: err, exit: exitAfterExec}
 	})
 }
 
